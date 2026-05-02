@@ -1,0 +1,30 @@
+# binaries
+/doks-oidc-shim
+
+# build artifacts
+/dist/
+*.exe
+*.test
+*.out
+*.tar.gz
+*.tar
+*.tgz
+*.zip
+*.7z
+
+# environment / secrets
+.env
+.env.*
+!.env.example
+
+# editor
+.vscode/
+.idea/
+.claude/
+.cursor/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

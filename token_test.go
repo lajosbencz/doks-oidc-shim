@@ -1,0 +1,181 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestValidRoleName_PathTraversal(t *testing.T) {
+	attacks := []string{
+		"../etc/passwd",
+		"../../root/.ssh/id_rsa",
+		"view/../admin",
+		"view/../../etc",
+		"./view",
+		"/etc/passwd",
+	}
+	for _, role := range attacks {
+		if err := validRoleName(role); err == nil {
+			t.Errorf("validRoleName(%q): expected error, got nil", role)
+		}
+	}
+}
+
+func TestValidRoleName_ShellUnsafe(t *testing.T) {
+	attacks := []string{
+		"view;rm -rf /",
+		"view|cat /etc/passwd",
+		"view$(whoami)",
+		"view`id`",
+		"view\x00admin",
+		"view admin",
+		"view\tadmin",
+		"view\nadmin",
+	}
+	for _, role := range attacks {
+		if err := validRoleName(role); err == nil {
+			t.Errorf("validRoleName(%q): expected error, got nil", role)
+		}
+	}
+}
+
+func TestValidRoleName_ValidInputs(t *testing.T) {
+	valid := []string{
+		"view",
+		"edit",
+		"admin",
+		"cluster-admin",
+		"my_role",
+		"role123",
+		"ROLE",
+		"role-1_A",
+	}
+	for _, role := range valid {
+		if err := validRoleName(role); err != nil {
+			t.Errorf("validRoleName(%q): unexpected error: %v", role, err)
+		}
+	}
+}
+
+func TestValidRoleName_Empty(t *testing.T) {
+	if err := validRoleName(""); err == nil {
+		t.Error("expected error for empty role name")
+	}
+}
+
+func TestValidRoleName_UnicodeLettersRejected(t *testing.T) {
+	// Homoglyph attacks via non-ASCII letters must be blocked — role names are
+	// ASCII-only to match Kubernetes resource naming conventions.
+	attacks := []string{
+		"аdmin",    // Cyrillic 'а' instead of ASCII 'a'
+		"admïn",    // Latin with diacritic
+		"管理者",      // CJK
+		"admin١",   // Arabic-Indic digit
+	}
+	for _, role := range attacks {
+		if err := validRoleName(role); err == nil {
+			t.Errorf("validRoleName(%q): expected error for non-ASCII, got nil", role)
+		}
+	}
+}
+
+func TestValidRoleName_LeadingHyphenRejected(t *testing.T) {
+	for _, role := range []string{"-role", "_role"} {
+		if err := validRoleName(role); err == nil {
+			t.Errorf("validRoleName(%q): expected error for leading punctuation, got nil", role)
+		}
+	}
+}
+
+func TestValidRoleName_TooLongRejected(t *testing.T) {
+	role := strings.Repeat("a", 64)
+	if err := validRoleName(role); err == nil {
+		t.Errorf("validRoleName(64-char string): expected error, got nil")
+	}
+}
+
+func TestReadSAToken_PathTraversalBlocked(t *testing.T) {
+	dir := t.TempDir()
+
+	// plant a sensitive file one level up from tokenDir
+	secret := filepath.Join(filepath.Dir(dir), "secret")
+	_ = os.WriteFile(secret, []byte("sensitive"), 0o600)
+	defer os.Remove(secret)
+
+	attempts := []string{
+		"../secret",
+		"../../etc/passwd",
+		"view/../../secret",
+	}
+	for _, role := range attempts {
+		_, err := readSAToken(dir, role)
+		if err == nil {
+			t.Errorf("readSAToken with role %q: expected error, got nil", role)
+		}
+	}
+}
+
+func TestReadSAToken_TrimsWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.Mkdir(filepath.Join(dir, "view"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "view", "token"), []byte("  mytoken\n"), 0o600)
+
+	tok, err := readSAToken(dir, "view")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok != "mytoken" {
+		t.Errorf("got %q, want %q", tok, "mytoken")
+	}
+}
+
+func TestReadSAToken_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+	_, err := readSAToken(dir, "nonexistent")
+	if err == nil {
+		t.Error("expected error for missing token file")
+	}
+}
+
+func TestRoleFromClaims_StringClaim(t *testing.T) {
+	role := roleFromClaims(map[string]any{"groups": "admin"}, "groups")
+	if role != "admin" {
+		t.Errorf("got %q, want %q", role, "admin")
+	}
+}
+
+func TestRoleFromClaims_SliceClaim(t *testing.T) {
+	// Only the first value is used — higher-privilege roles must not be injected
+	// by supplying a crafted multi-value claim.
+	role := roleFromClaims(map[string]any{"groups": []any{"view", "admin"}}, "groups")
+	if role != "view" {
+		t.Errorf("got %q, want %q", role, "view")
+	}
+}
+
+func TestRoleFromClaims_MissingClaim(t *testing.T) {
+	role := roleFromClaims(map[string]any{"email": "alice@example.com"}, "groups")
+	if role != "" {
+		t.Errorf("got %q, want empty string", role)
+	}
+}
+
+func TestRoleFromClaims_UnexpectedType(t *testing.T) {
+	// A numeric or boolean claim value must not produce a role — it should be
+	// treated as absent so the caller can apply the safe default.
+	for _, val := range []any{42, true, map[string]any{}} {
+		role := roleFromClaims(map[string]any{"groups": val}, "groups")
+		if role != "" {
+			t.Errorf("claim value %T: got %q, want empty string", val, role)
+		}
+	}
+}
+
+func TestRoleFromClaims_EmptySlice(t *testing.T) {
+	role := roleFromClaims(map[string]any{"groups": []any{}}, "groups")
+	if role != "" {
+		t.Errorf("got %q, want empty string", role)
+	}
+}
