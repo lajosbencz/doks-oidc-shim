@@ -4,7 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"net"
+	"fmt"
+"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -47,6 +48,51 @@ func (proxyErrorResponder) Error(w http.ResponseWriter, r *http.Request, err err
 	http.Error(w, "upstream error", http.StatusBadGateway)
 }
 
+const maxRedirects = 10
+
+// redirectFollowingTransport follows same-host 3xx redirects internally so
+// they never reach the browser — browser cookies scoped to a sub-path would
+// otherwise be dropped, breaking cookie-authenticated UIs like Headlamp.
+// Only GET and HEAD are followed; other methods are returned as-is to avoid
+// consuming an already-drained request body.
+type redirectFollowingTransport struct {
+	base   http.RoundTripper
+	target *url.URL
+}
+
+func (t *redirectFollowingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method != http.MethodGet && req.Method != http.MethodHead {
+		return t.base.RoundTrip(req)
+	}
+	for range maxRedirects {
+		resp, err := t.base.RoundTrip(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode < 300 || resp.StatusCode >= 400 {
+			return resp, nil
+		}
+		loc := resp.Header.Get("Location")
+		if loc == "" {
+			return resp, nil
+		}
+		next, err := url.Parse(loc)
+		if err != nil {
+			return resp, nil
+		}
+		next = req.URL.ResolveReference(next)
+		if next.Host != t.target.Host {
+			return resp, nil
+		}
+		_ = resp.Body.Close()
+		clone := req.Clone(req.Context())
+		clone.URL = next
+		clone.RequestURI = ""
+		req = clone
+	}
+	return nil, fmt.Errorf("redirect loop: exceeded %d hops", maxRedirects)
+}
+
 func buildProxy(cfg config, target *url.URL, caCert []byte) http.Handler {
 	pool := x509.NewCertPool()
 	pool.AppendCertsFromPEM(caCert)
@@ -63,7 +109,8 @@ func buildProxy(cfg config, target *url.URL, caCert []byte) http.Handler {
 		IdleConnTimeout:       cfg.IdleConnTimeout,
 	}
 
-	h := kubeproxy.NewUpgradeAwareHandler(target, transport, false, false, proxyErrorResponder{})
+	wrapped := &redirectFollowingTransport{base: transport, target: target}
+	h := kubeproxy.NewUpgradeAwareHandler(target, wrapped, false, false, proxyErrorResponder{})
 	h.UseRequestLocation = true
 	return h
 }
