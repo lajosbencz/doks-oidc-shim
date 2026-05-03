@@ -14,10 +14,10 @@ linters:
     - prealloc       # slice preallocation
     - unparam        # unused function parameters
 
-linters-settings:
-  gosec:
-    excludes:
-      - G115  # integer overflow on conversion — not applicable here
+  settings:
+    gosec:
+      excludes:
+        - G115  # integer overflow on conversion — not applicable here
 
 issues:
   max-issues-per-linter: 0
