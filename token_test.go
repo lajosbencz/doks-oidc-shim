@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,6 +97,13 @@ func TestValidRoleName_TooLongRejected(t *testing.T) {
 	}
 }
 
+func TestValidRoleName_MaxLengthAccepted(t *testing.T) {
+	role := strings.Repeat("a", 63)
+	if err := validRoleName(role); err != nil {
+		t.Errorf("validRoleName(63-char string): unexpected error: %v", err)
+	}
+}
+
 func TestReadSAToken_PathTraversalBlocked(t *testing.T) {
 	dir := t.TempDir()
 
@@ -175,5 +183,56 @@ func TestRoleFromClaims_EmptySlice(t *testing.T) {
 	groups := roleFromClaims(map[string]any{"groups": []any{}}, "groups")
 	if len(groups) != 0 {
 		t.Errorf("got %v, want empty", groups)
+	}
+}
+
+func TestRoleFromClaims_MixedTypeSlice(t *testing.T) {
+	// Non-string items must be silently skipped; valid strings must be returned.
+	groups := roleFromClaims(map[string]any{"groups": []any{"admin", 42, "viewer"}}, "groups")
+	if len(groups) != 2 || groups[0] != "admin" || groups[1] != "viewer" {
+		t.Errorf("got %v, want [admin viewer]", groups)
+	}
+}
+
+// --- jwtIssuerMatches ---
+
+func TestJWTIssuerMatches_MatchingIssuer(t *testing.T) {
+	token := fakeJWT(t, `{"iss":"https://issuer.example.com"}`)
+	if !jwtIssuerMatches(token, "https://issuer.example.com") {
+		t.Error("expected true for matching issuer")
+	}
+}
+
+func TestJWTIssuerMatches_NonMatchingIssuer(t *testing.T) {
+	token := fakeJWT(t, `{"iss":"https://other.example.com"}`)
+	if jwtIssuerMatches(token, "https://issuer.example.com") {
+		t.Error("expected false for non-matching issuer")
+	}
+}
+
+func TestJWTIssuerMatches_MissingIssClaim(t *testing.T) {
+	token := fakeJWT(t, `{"sub":"alice"}`)
+	if jwtIssuerMatches(token, "https://issuer.example.com") {
+		t.Error("expected false when iss claim is absent")
+	}
+}
+
+func TestJWTIssuerMatches_NotAJWT(t *testing.T) {
+	if jwtIssuerMatches("not-a-jwt", "https://issuer.example.com") {
+		t.Error("expected false for non-JWT string")
+	}
+}
+
+func TestJWTIssuerMatches_InvalidBase64Payload(t *testing.T) {
+	if jwtIssuerMatches("header.!!!.sig", "https://issuer.example.com") {
+		t.Error("expected false for invalid base64 payload")
+	}
+}
+
+func TestJWTIssuerMatches_InvalidJSONPayload(t *testing.T) {
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`not-json`))
+	token := "header." + payload + ".sig"
+	if jwtIssuerMatches(token, "https://issuer.example.com") {
+		t.Error("expected false for invalid JSON payload")
 	}
 }

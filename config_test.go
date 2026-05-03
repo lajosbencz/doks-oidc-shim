@@ -88,6 +88,45 @@ func TestLoadConfig_K8sAPIDerivedFromIPv6FullAddr(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_TLSCertWithoutKeyRejected(t *testing.T) {
+	t.Setenv("OIDC_ISSUER", "https://issuer.example.com")
+	t.Setenv("OIDC_CLIENT_ID", "client")
+	t.Setenv("K8S_API", "https://k8s.example.com")
+	t.Setenv("TLS_CERT_FILE", "/path/to/cert.pem")
+	t.Setenv("TLS_KEY_FILE", "")
+
+	_, err := loadConfig([]string{})
+	if err == nil {
+		t.Error("expected error when tls-cert-file is set but tls-key-file is not")
+	}
+}
+
+func TestLoadConfig_TLSKeyWithoutCertRejected(t *testing.T) {
+	t.Setenv("OIDC_ISSUER", "https://issuer.example.com")
+	t.Setenv("OIDC_CLIENT_ID", "client")
+	t.Setenv("K8S_API", "https://k8s.example.com")
+	t.Setenv("TLS_CERT_FILE", "")
+	t.Setenv("TLS_KEY_FILE", "/path/to/key.pem")
+
+	_, err := loadConfig([]string{})
+	if err == nil {
+		t.Error("expected error when tls-key-file is set but tls-cert-file is not")
+	}
+}
+
+func TestLoadConfig_K8sAPIServiceHostWithoutPort(t *testing.T) {
+	t.Setenv("OIDC_ISSUER", "https://issuer.example.com")
+	t.Setenv("OIDC_CLIENT_ID", "client")
+	t.Setenv("K8S_API", "")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
+
+	_, err := loadConfig([]string{})
+	if err == nil {
+		t.Error("expected error when KUBERNETES_SERVICE_HOST is set but KUBERNETES_SERVICE_PORT is missing")
+	}
+}
+
 func TestLoadConfig_AllowPassthroughDefaultsFalse(t *testing.T) {
 	t.Setenv("OIDC_ISSUER", "https://issuer.example.com")
 	t.Setenv("OIDC_CLIENT_ID", "client")

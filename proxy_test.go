@@ -99,6 +99,49 @@ func fakeJWT(t *testing.T, payloadJSON string) string {
 
 // --- handler ---
 
+func TestHandler_NonBearerAuthPassedThrough(t *testing.T) {
+	// Schemes other than Bearer (e.g. Basic) must bypass OIDC verification entirely.
+	var receivedAuth string
+	proxy := testBackend(t, &receivedAuth)
+	cfg := config{GroupsClaim: "groups", TokenDir: t.TempDir()}
+	verify := func(_ context.Context, _ string) (map[string]any, error) {
+		t.Error("verify must not be called for non-Bearer schemes")
+		return nil, nil
+	}
+
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
+	w := httptest.NewRecorder()
+
+	handler(cfg, verify, proxy)(w, r)
+
+	if receivedAuth != "Basic dXNlcjpwYXNz" {
+		t.Errorf("backend received %q, want original Basic auth header", receivedAuth)
+	}
+}
+
+func TestHandler_ForeignIssuerJWTRejectedWhenPassthroughDisabled(t *testing.T) {
+	// A JWT from a different issuer should be treated as non-OIDC.
+	// With passthrough disabled it must be rejected with 401, not forwarded.
+	proxy := testBackend(t, new(string))
+	const configuredIssuer = "https://issuer.example.com"
+	cfg := config{OIDCIssuer: configuredIssuer, GroupsClaim: "groups", TokenDir: t.TempDir(), AllowPassthrough: false}
+	foreignToken := fakeJWT(t, `{"iss":"https://other.example.com","sub":"alice"}`)
+	verify := func(_ context.Context, _ string) (map[string]any, error) {
+		return nil, errors.New("unknown issuer")
+	}
+
+	r := httptest.NewRequest("GET", "/api/v1/pods", nil)
+	r.Header.Set("Authorization", "Bearer "+foreignToken)
+	w := httptest.NewRecorder()
+
+	handler(cfg, verify, proxy)(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401 for foreign-issuer JWT with passthrough disabled", w.Code)
+	}
+}
+
 func TestHandler_ImpersonationHeadersStrippedOnPassThrough(t *testing.T) {
 	// Even when the token is not OIDC (pass-through path), impersonation headers
 	// must be stripped before forwarding — the destination SA might have impersonate permissions.
