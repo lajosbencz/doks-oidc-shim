@@ -22,5 +22,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: go tool golangci-lint run
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.12.1
       - run: go tool editorconfig-checker
