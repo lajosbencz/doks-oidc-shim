@@ -16,6 +16,7 @@ type config struct {
 	OIDCClientID    string        `ff:"long: oidc-client-id, usage: OIDC client ID (required)"`
 	OIDCInitTimeout time.Duration `ff:"long: oidc-init-timeout, default: 30s, usage: max time to fetch OIDC discovery and JWKS at startup"`
 	GroupsClaim     string        `ff:"long: groups-claim, default: groups, usage: JWT claim mapped to SA role"`
+	AllowPassthrough bool         `ff:"long: allow-passthrough, default: false, usage: forward non-OIDC bearer tokens to the k8s API unchanged; if false (default) non-OIDC tokens are rejected with 401"`
 	K8sAPI          string        `ff:"long: k8s-api, usage: Kubernetes API server URL; derived from KUBERNETES_SERVICE_HOST/PORT if unset"`
 	K8sCAFile       string        `ff:"long: k8s-ca-file, default: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt, usage: path to K8s cluster CA certificate"`
 	TokenDir        string        `ff:"long: token-dir, default: /var/run/secrets/tokens, usage: directory containing per-role SA token subdirectories"`

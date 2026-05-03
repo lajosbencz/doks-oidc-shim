@@ -102,7 +102,7 @@ func TestReadSAToken_PathTraversalBlocked(t *testing.T) {
 	// plant a sensitive file one level up from tokenDir
 	secret := filepath.Join(filepath.Dir(dir), "secret")
 	_ = os.WriteFile(secret, []byte("sensitive"), 0o600)
-	defer os.Remove(secret)
+	t.Cleanup(func() { _ = os.Remove(secret) })
 
 	attempts := []string{
 		"../secret",
@@ -119,7 +119,7 @@ func TestReadSAToken_PathTraversalBlocked(t *testing.T) {
 
 func TestReadSAToken_TrimsWhitespace(t *testing.T) {
 	dir := t.TempDir()
-	_ = os.Mkdir(filepath.Join(dir, "view"), 0o755)
+	_ = os.Mkdir(filepath.Join(dir, "view"), 0o750)
 	_ = os.WriteFile(filepath.Join(dir, "view", "token"), []byte("  mytoken\n"), 0o600)
 
 	tok, err := readSAToken(dir, "view")

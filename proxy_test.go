@@ -67,7 +67,7 @@ func TestStripImpersonationHeaders_PreservesLegitimateHeaders(t *testing.T) {
 
 // testBackend returns a backend server that captures the Authorization header
 // sent by the proxy into *receivedAuth.
-func testBackend(t *testing.T, receivedAuth *string) (*httptest.Server, *url.URL, *httputil.ReverseProxy) {
+func testBackend(t *testing.T, receivedAuth *string) *httputil.ReverseProxy {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*receivedAuth = r.Header.Get("Authorization")
@@ -75,14 +75,14 @@ func testBackend(t *testing.T, receivedAuth *string) (*httptest.Server, *url.URL
 	}))
 	t.Cleanup(srv.Close)
 	target, _ := url.Parse(srv.URL)
-	return srv, target, httputil.NewSingleHostReverseProxy(target)
+	return httputil.NewSingleHostReverseProxy(target)
 }
 
 func testTokenDir(t *testing.T, roles map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	for role, token := range roles {
-		_ = os.MkdirAll(filepath.Join(dir, role), 0o755)
+		_ = os.MkdirAll(filepath.Join(dir, role), 0o750)
 		_ = os.WriteFile(filepath.Join(dir, role, "token"), []byte(token), 0o600)
 	}
 	return dir
@@ -111,7 +111,7 @@ func TestHandler_ImpersonationHeadersStrippedOnPassThrough(t *testing.T) {
 
 	target, _ := url.Parse(backend.URL)
 	proxy := httputil.NewSingleHostReverseProxy(target)
-	cfg := config{GroupsClaim: "groups", TokenDir: t.TempDir()}
+	cfg := config{GroupsClaim: "groups", TokenDir: t.TempDir(), AllowPassthrough: true}
 	verify := func(_ context.Context, _ string) (map[string]any, error) {
 		return nil, errors.New("not oidc")
 	}
@@ -129,8 +129,8 @@ func TestHandler_ImpersonationHeadersStrippedOnPassThrough(t *testing.T) {
 
 func TestHandler_NonOIDCTokenPassedThrough(t *testing.T) {
 	var receivedAuth string
-	_, _, proxy := testBackend(t, &receivedAuth)
-	cfg := config{GroupsClaim: "groups", TokenDir: t.TempDir()}
+	proxy := testBackend(t, &receivedAuth)
+	cfg := config{GroupsClaim: "groups", TokenDir: t.TempDir(), AllowPassthrough: true}
 	verify := func(_ context.Context, _ string) (map[string]any, error) {
 		return nil, errors.New("not oidc")
 	}
@@ -150,8 +150,8 @@ func TestHandler_NonJWTOpaqueTokenPassedThrough(t *testing.T) {
 	// An opaque token (no dots) that fails verification must be forwarded unchanged —
 	// it is structurally not a JWT and therefore not an OIDC token from our issuer.
 	var receivedAuth string
-	_, _, proxy := testBackend(t, &receivedAuth)
-	cfg := config{OIDCIssuer: "https://issuer.example.com", GroupsClaim: "groups", TokenDir: t.TempDir()}
+	proxy := testBackend(t, &receivedAuth)
+	cfg := config{OIDCIssuer: "https://issuer.example.com", GroupsClaim: "groups", TokenDir: t.TempDir(), AllowPassthrough: true}
 	verify := func(_ context.Context, _ string) (map[string]any, error) {
 		return nil, errors.New("parse error: not a jwt")
 	}
@@ -167,10 +167,28 @@ func TestHandler_NonJWTOpaqueTokenPassedThrough(t *testing.T) {
 	}
 }
 
+func TestHandler_NonOIDCTokenRejectedWhenPassthroughDisabled(t *testing.T) {
+	proxy := testBackend(t, new(string))
+	cfg := config{OIDCIssuer: "https://issuer.example.com", GroupsClaim: "groups", TokenDir: t.TempDir(), AllowPassthrough: false}
+	verify := func(_ context.Context, _ string) (map[string]any, error) {
+		return nil, errors.New("not oidc")
+	}
+
+	r := httptest.NewRequest("GET", "/api/v1/pods", nil)
+	r.Header.Set("Authorization", "Bearer in-cluster-sa-token")
+	w := httptest.NewRecorder()
+
+	handler(cfg, verify, proxy)(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401 when passthrough is disabled", w.Code)
+	}
+}
+
 func TestHandler_ExpiredOIDCTokenRejectedWith401(t *testing.T) {
 	// A JWT from our issuer that fails verification (e.g. expired) must be rejected
 	// with 401, not silently forwarded to the backend.
-	_, _, proxy := testBackend(t, new(string))
+	proxy := testBackend(t, new(string))
 	const issuer = "https://issuer.example.com"
 	cfg := config{OIDCIssuer: issuer, GroupsClaim: "groups", TokenDir: t.TempDir()}
 	expiredToken := fakeJWT(t, `{"iss":"`+issuer+`","sub":"alice","exp":1}`)
@@ -191,7 +209,7 @@ func TestHandler_ExpiredOIDCTokenRejectedWith401(t *testing.T) {
 
 func TestHandler_NoAuthHeaderPassedThrough(t *testing.T) {
 	var receivedAuth string
-	_, _, proxy := testBackend(t, &receivedAuth)
+	proxy := testBackend(t, &receivedAuth)
 	cfg := config{GroupsClaim: "groups", TokenDir: t.TempDir()}
 	verify := func(_ context.Context, _ string) (map[string]any, error) {
 		return nil, errors.New("not oidc")
@@ -213,7 +231,7 @@ func TestHandler_NoAuthHeaderPassedThrough(t *testing.T) {
 func TestHandler_LowercaseBearerVerified(t *testing.T) {
 	// RFC 7235 §2.1: auth-scheme is case-insensitive — "bearer" must trigger OIDC verification.
 	var receivedAuth string
-	_, _, proxy := testBackend(t, &receivedAuth)
+	proxy := testBackend(t, &receivedAuth)
 	dir := testTokenDir(t, map[string]string{"admin": "admin-sa-token"})
 	cfg := config{GroupsClaim: "groups", TokenDir: dir}
 	verify := func(_ context.Context, _ string) (map[string]any, error) {
@@ -233,7 +251,7 @@ func TestHandler_LowercaseBearerVerified(t *testing.T) {
 
 func TestHandler_OIDCTokenSwappedForSAToken(t *testing.T) {
 	var receivedAuth string
-	_, _, proxy := testBackend(t, &receivedAuth)
+	proxy := testBackend(t, &receivedAuth)
 	dir := testTokenDir(t, map[string]string{"admin": "admin-sa-token"})
 	cfg := config{GroupsClaim: "groups", TokenDir: dir}
 	verify := func(_ context.Context, _ string) (map[string]any, error) {
@@ -253,7 +271,7 @@ func TestHandler_OIDCTokenSwappedForSAToken(t *testing.T) {
 
 func TestHandler_NoRoleClaimDefaultsToView(t *testing.T) {
 	var receivedAuth string
-	_, _, proxy := testBackend(t, &receivedAuth)
+	proxy := testBackend(t, &receivedAuth)
 	dir := testTokenDir(t, map[string]string{"view": "view-sa-token"})
 	cfg := config{GroupsClaim: "groups", TokenDir: dir}
 	verify := func(_ context.Context, _ string) (map[string]any, error) {
@@ -272,7 +290,7 @@ func TestHandler_NoRoleClaimDefaultsToView(t *testing.T) {
 }
 
 func TestHandler_MissingSATokenFile_Returns403(t *testing.T) {
-	_, _, proxy := testBackend(t, new(string))
+	proxy := testBackend(t, new(string))
 	cfg := config{
 		GroupsClaim: "groups",
 		TokenDir:    t.TempDir(), // empty — no token files
@@ -295,7 +313,7 @@ func TestHandler_MissingSATokenFile_Returns403(t *testing.T) {
 func TestHandler_MaliciousRoleClaimBlocked(t *testing.T) {
 	// An OIDC token with a crafted groups claim containing path traversal characters
 	// must not reach the filesystem — it must be rejected with 403, not 500.
-	_, _, proxy := testBackend(t, new(string))
+	proxy := testBackend(t, new(string))
 	cfg := config{GroupsClaim: "groups", TokenDir: t.TempDir()}
 	verify := func(_ context.Context, _ string) (map[string]any, error) {
 		return map[string]any{"groups": "../etc/passwd"}, nil
@@ -314,9 +332,9 @@ func TestHandler_MaliciousRoleClaimBlocked(t *testing.T) {
 
 func TestHandler_OIDCTokenNotLeakedToBackend(t *testing.T) {
 	// The original OIDC token must never reach the k8s API — only the SA token should.
-	const oidcToken = "secret-oidc-id-token"
+	const oidcToken = "secret-oidc-id-token" //nolint:gosec // test value, not a real credential
 	var receivedAuth string
-	_, _, proxy := testBackend(t, &receivedAuth)
+	proxy := testBackend(t, &receivedAuth)
 	dir := testTokenDir(t, map[string]string{"view": "view-sa-token"})
 	cfg := config{GroupsClaim: "groups", TokenDir: dir}
 	verify := func(_ context.Context, _ string) (map[string]any, error) {

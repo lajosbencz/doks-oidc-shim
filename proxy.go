@@ -97,6 +97,11 @@ func handler(cfg config, verify verifyFunc, proxy http.Handler) http.HandlerFunc
 					http.Error(w, "token validation failed", http.StatusUnauthorized)
 					return
 				}
+				if !cfg.AllowPassthrough {
+					logger.Warn("non-OIDC token rejected (passthrough disabled)", "err", err)
+					http.Error(w, "non-OIDC token not accepted", http.StatusUnauthorized)
+					return
+				}
 				// Structurally non-OIDC (opaque SA token, bootstrap token, etc.) — pass through.
 				logger.Debug("non-OIDC token, passing through", "err", err)
 				proxy.ServeHTTP(w, r)

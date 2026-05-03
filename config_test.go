@@ -88,6 +88,20 @@ func TestLoadConfig_K8sAPIDerivedFromIPv6FullAddr(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_AllowPassthroughDefaultsFalse(t *testing.T) {
+	t.Setenv("OIDC_ISSUER", "https://issuer.example.com")
+	t.Setenv("OIDC_CLIENT_ID", "client")
+	t.Setenv("K8S_API", "https://k8s.example.com")
+
+	cfg, err := loadConfig([]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AllowPassthrough {
+		t.Error("AllowPassthrough should default to false")
+	}
+}
+
 func TestLoadConfig_ExplicitK8sAPITakesPrecedence(t *testing.T) {
 	t.Setenv("OIDC_ISSUER", "https://issuer.example.com")
 	t.Setenv("OIDC_CLIENT_ID", "client")
