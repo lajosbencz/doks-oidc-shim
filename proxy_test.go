@@ -269,11 +269,9 @@ func TestHandler_OIDCTokenSwappedForSAToken(t *testing.T) {
 	}
 }
 
-func TestHandler_NoRoleClaimDefaultsToView(t *testing.T) {
-	var receivedAuth string
-	proxy := testBackend(t, &receivedAuth)
-	dir := testTokenDir(t, map[string]string{"view": "view-sa-token"})
-	cfg := config{GroupsClaim: "groups", TokenDir: dir}
+func TestHandler_NoGroupsClaim_Returns403(t *testing.T) {
+	proxy := testBackend(t, new(string))
+	cfg := config{GroupsClaim: "groups", TokenDir: t.TempDir()}
 	verify := func(_ context.Context, _ string) (map[string]any, error) {
 		return map[string]any{"sub": "alice"}, nil // no groups claim
 	}
@@ -284,8 +282,8 @@ func TestHandler_NoRoleClaimDefaultsToView(t *testing.T) {
 
 	handler(cfg, verify, proxy)(w, r)
 
-	if receivedAuth != "Bearer view-sa-token" {
-		t.Errorf("backend received %q, want view SA token", receivedAuth)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 when no groups claim", w.Code)
 	}
 }
 
