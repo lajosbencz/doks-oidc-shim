@@ -15,8 +15,8 @@ import (
 
 // impersonationHeaders lists fixed Kubernetes privilege-escalation headers.
 // Verified complete as of k8s 1.30.
-// @see: https://kubernetes.io/docs/reference/access-authn-authz/authentication/#user-impersonation
-// @see: https://kubernetes.io/docs/reference/access-authn-authz/authentication/#authenticating-proxy
+// https://kubernetes.io/docs/reference/access-authn-authz/authentication/#user-impersonation
+// https://kubernetes.io/docs/reference/access-authn-authz/authentication/#authenticating-proxy
 var impersonationHeaders = []string{
 	"Impersonate-User",
 	"Impersonate-Group",
@@ -68,13 +68,30 @@ func buildProxy(cfg config, target *url.URL, caCert []byte) http.Handler {
 	return h
 }
 
+// hasPrefixFold reports whether s has the given lowercase prefix,
+// using ASCII case-folding without allocating.
+func hasPrefixFold(s, prefix string) bool {
+	if len(s) < len(prefix) {
+		return false
+	}
+	for i := range len(prefix) {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		if c != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func stripImpersonationHeaders(r *http.Request) {
 	for _, h := range impersonationHeaders {
 		r.Header.Del(h)
 	}
 	for key := range r.Header {
-		lower := strings.ToLower(key)
-		if strings.HasPrefix(lower, "x-remote-extra-") || strings.HasPrefix(lower, "impersonate-extra-") {
+		if hasPrefixFold(key, "x-remote-extra-") || hasPrefixFold(key, "impersonate-extra-") {
 			r.Header.Del(key)
 		}
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -66,32 +67,37 @@ func main() {
 		WriteTimeout:      cfg.WriteTimeout,
 		IdleTimeout:       cfg.IdleTimeout,
 		MaxHeaderBytes:    cfg.MaxHeaderBytes,
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	serveErr := make(chan error, 1)
 	go func() {
 		logger.Info("listening", "addr", cfg.Listen, "tls", cfg.TLSCertFile != "")
-		var serveErr error
+		var err error
 		if cfg.TLSCertFile != "" {
-			serveErr = srv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+			err = srv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
 		} else {
-			serveErr = srv.ListenAndServe()
+			err = srv.ListenAndServe()
 		}
-		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			logger.Error("server error", "err", serveErr)
-			os.Exit(1)
+		if !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- err
 		}
 	}()
 
-	<-ctx.Done()
-	logger.Info("shutting down")
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("shutdown error", "err", err)
+	select {
+	case <-ctx.Done():
+		logger.Info("shutting down")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("shutdown error", "err", err)
+			os.Exit(1)
+		}
+	case err := <-serveErr:
+		logger.Error("server error", "err", err)
 		os.Exit(1)
 	}
 }

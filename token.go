@@ -33,7 +33,11 @@ func readSAToken(tokenDir, role string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("reading SA token for role %q: %w", role, err)
 	}
-	return strings.TrimSpace(string(b)), nil
+	tok := strings.TrimSpace(string(b))
+	if tok == "" {
+		return "", fmt.Errorf("SA token file for role %q is empty", role)
+	}
+	return tok, nil
 }
 
 func roleFromClaims(claims map[string]any, groupsClaim string) []string {
