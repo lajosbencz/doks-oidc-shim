@@ -117,8 +117,11 @@ func buildProxy(cfg config, target *url.URL, caCert []byte) http.Handler {
 	if loc.Path == "" {
 		loc.Path = "/"
 	}
-	wrapped := &redirectFollowingTransport{base: transport, target: &loc}
-	h := kubeproxy.NewUpgradeAwareHandler(&loc, wrapped, false, false, proxyErrorResponder{})
+	var rt http.RoundTripper = transport
+	if cfg.FollowRedirects {
+		rt = &redirectFollowingTransport{base: transport, target: &loc}
+	}
+	h := kubeproxy.NewUpgradeAwareHandler(&loc, rt, false, false, proxyErrorResponder{})
 	h.UseRequestLocation = true
 	return h
 }
