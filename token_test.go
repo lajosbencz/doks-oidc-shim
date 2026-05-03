@@ -140,25 +140,23 @@ func TestReadSAToken_MissingFile(t *testing.T) {
 }
 
 func TestRoleFromClaims_StringClaim(t *testing.T) {
-	role := roleFromClaims(map[string]any{"groups": "admin"}, "groups")
-	if role != "admin" {
-		t.Errorf("got %q, want %q", role, "admin")
+	groups := roleFromClaims(map[string]any{"groups": "admin"}, "groups")
+	if len(groups) != 1 || groups[0] != "admin" {
+		t.Errorf("got %v, want [admin]", groups)
 	}
 }
 
 func TestRoleFromClaims_SliceClaim(t *testing.T) {
-	// Only the first value is used — higher-privilege roles must not be injected
-	// by supplying a crafted multi-value claim.
-	role := roleFromClaims(map[string]any{"groups": []any{"view", "admin"}}, "groups")
-	if role != "view" {
-		t.Errorf("got %q, want %q", role, "view")
+	groups := roleFromClaims(map[string]any{"groups": []any{"admins", "k8s-admin"}}, "groups")
+	if len(groups) != 2 || groups[0] != "admins" || groups[1] != "k8s-admin" {
+		t.Errorf("got %v, want [admins k8s-admin]", groups)
 	}
 }
 
 func TestRoleFromClaims_MissingClaim(t *testing.T) {
-	role := roleFromClaims(map[string]any{"email": "alice@example.com"}, "groups")
-	if role != "" {
-		t.Errorf("got %q, want empty string", role)
+	groups := roleFromClaims(map[string]any{"email": "alice@example.com"}, "groups")
+	if len(groups) != 0 {
+		t.Errorf("got %v, want empty", groups)
 	}
 }
 
@@ -166,16 +164,16 @@ func TestRoleFromClaims_UnexpectedType(t *testing.T) {
 	// A numeric or boolean claim value must not produce a role — it should be
 	// treated as absent so the caller can apply the safe default.
 	for _, val := range []any{42, true, map[string]any{}} {
-		role := roleFromClaims(map[string]any{"groups": val}, "groups")
-		if role != "" {
-			t.Errorf("claim value %T: got %q, want empty string", val, role)
+		groups := roleFromClaims(map[string]any{"groups": val}, "groups")
+		if len(groups) != 0 {
+			t.Errorf("claim value %T: got %v, want empty", val, groups)
 		}
 	}
 }
 
 func TestRoleFromClaims_EmptySlice(t *testing.T) {
-	role := roleFromClaims(map[string]any{"groups": []any{}}, "groups")
-	if role != "" {
-		t.Errorf("got %q, want empty string", role)
+	groups := roleFromClaims(map[string]any{"groups": []any{}}, "groups")
+	if len(groups) != 0 {
+		t.Errorf("got %v, want empty", groups)
 	}
 }

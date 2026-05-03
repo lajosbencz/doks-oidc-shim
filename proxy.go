@@ -108,16 +108,30 @@ func handler(cfg config, verify verifyFunc, proxy http.Handler) http.HandlerFunc
 				return
 			}
 
-			role := roleFromClaims(claims, cfg.GroupsClaim)
-			if role == "" {
-				role = "view"
-			}
+			groups := roleFromClaims(claims, cfg.GroupsClaim)
 
-			saToken, err := readSAToken(cfg.TokenDir, role)
-			if err != nil {
-				logger.Error("SA token unavailable", "role", role, "err", err)
-				http.Error(w, "no SA token available for role", http.StatusForbidden)
-				return
+			var role, saToken string
+			if len(groups) == 0 {
+				tok, err := readSAToken(cfg.TokenDir, "view")
+				if err != nil {
+					logger.Error("SA token unavailable", "role", "view", "err", err)
+					http.Error(w, "no SA token available for role", http.StatusForbidden)
+					return
+				}
+				role, saToken = "view", tok
+			} else {
+				for _, g := range groups {
+					tok, err := readSAToken(cfg.TokenDir, g)
+					if err == nil {
+						role, saToken = g, tok
+						break
+					}
+				}
+				if role == "" {
+					logger.Error("no SA token matched any group", "groups", groups)
+					http.Error(w, "no SA token available for role", http.StatusForbidden)
+					return
+				}
 			}
 
 			logger.Info("proxying authenticated request",

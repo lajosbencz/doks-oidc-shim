@@ -36,22 +36,24 @@ func readSAToken(tokenDir, role string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-func roleFromClaims(claims map[string]any, groupsClaim string) string {
+func roleFromClaims(claims map[string]any, groupsClaim string) []string {
 	v, ok := claims[groupsClaim]
 	if !ok {
-		return ""
+		return []string{}
 	}
 	switch val := v.(type) {
 	case string:
-		return val
+		return []string{val}
 	case []any:
-		if len(val) > 0 {
-			if s, ok := val[0].(string); ok {
-				return s
+		groups := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				groups = append(groups, s)
 			}
 		}
+		return groups
 	}
-	return ""
+	return []string{}
 }
 
 // jwtIssuerMatches decodes the JWT payload without verifying the signature and

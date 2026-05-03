@@ -289,6 +289,28 @@ func TestHandler_NoRoleClaimDefaultsToView(t *testing.T) {
 	}
 }
 
+func TestHandler_FirstGroupWithTokenIsUsed(t *testing.T) {
+	// User has groups [admins, k8s-admin]; only k8s-admin has a token file.
+	// The shim must skip admins and pick k8s-admin.
+	var receivedAuth string
+	proxy := testBackend(t, &receivedAuth)
+	dir := testTokenDir(t, map[string]string{"k8s-admin": "k8s-admin-sa-token"})
+	cfg := config{GroupsClaim: "groups", TokenDir: dir}
+	verify := func(_ context.Context, _ string) (map[string]any, error) {
+		return map[string]any{"groups": []any{"admins", "k8s-admin"}}, nil
+	}
+
+	r := httptest.NewRequest("GET", "/api/v1/pods", nil)
+	r.Header.Set("Authorization", "Bearer oidc-id-token")
+	w := httptest.NewRecorder()
+
+	handler(cfg, verify, proxy)(w, r)
+
+	if receivedAuth != "Bearer k8s-admin-sa-token" {
+		t.Errorf("backend received %q, want k8s-admin SA token", receivedAuth)
+	}
+}
+
 func TestHandler_MissingSATokenFile_Returns403(t *testing.T) {
 	proxy := testBackend(t, new(string))
 	cfg := config{
