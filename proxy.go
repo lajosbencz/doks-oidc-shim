@@ -109,8 +109,16 @@ func buildProxy(cfg config, target *url.URL, caCert []byte) http.Handler {
 		IdleConnTimeout:       cfg.IdleConnTimeout,
 	}
 
-	wrapped := &redirectFollowingTransport{base: transport, target: target}
-	h := kubeproxy.NewUpgradeAwareHandler(target, wrapped, false, false, proxyErrorResponder{})
+	// UpgradeAwareHandler generates a spurious 301 for every path-less GET when
+	// loc.Path == "" (see upgradeaware.go proxyRedirectsForRootPath). Cloning the
+	// URL and setting Path="/" suppresses it; UseRequestLocation=true means the
+	// actual request path is taken from req.URL, so routing is unaffected.
+	loc := *target
+	if loc.Path == "" {
+		loc.Path = "/"
+	}
+	wrapped := &redirectFollowingTransport{base: transport, target: &loc}
+	h := kubeproxy.NewUpgradeAwareHandler(&loc, wrapped, false, false, proxyErrorResponder{})
 	h.UseRequestLocation = true
 	return h
 }
