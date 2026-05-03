@@ -35,7 +35,7 @@ func TestRedirectFollowingTransport_FollowsSameHostRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -65,7 +65,7 @@ func TestRedirectFollowingTransport_CrossHostRedirectNotFollowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	if resp.StatusCode != http.StatusFound {
 		t.Errorf("status = %d, want 302 (redirect returned as-is)", resp.StatusCode)
@@ -86,7 +86,7 @@ func TestRedirectFollowingTransport_NonGetNotFollowed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	if resp.StatusCode != http.StatusMovedPermanently {
 		t.Errorf("status = %d, want 301 (POST redirect not followed)", resp.StatusCode)
@@ -103,8 +103,9 @@ func TestRedirectFollowingTransport_LoopDetected(t *testing.T) {
 	tr := &redirectFollowingTransport{base: http.DefaultTransport, target: target}
 
 	req, _ := http.NewRequest(http.MethodGet, backend.URL+"/loop", nil)
-	_, err := tr.RoundTrip(req)
+	resp, err := tr.RoundTrip(req)
 	if err == nil {
+		_ = resp.Body.Close()
 		t.Error("expected error for redirect loop, got nil")
 	}
 }
