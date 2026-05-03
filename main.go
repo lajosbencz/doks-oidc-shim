@@ -72,9 +72,15 @@ func main() {
 	defer stop()
 
 	go func() {
-		logger.Info("listening", "addr", cfg.Listen)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("server error", "err", err)
+		logger.Info("listening", "addr", cfg.Listen, "tls", cfg.TLSCertFile != "")
+		var serveErr error
+		if cfg.TLSCertFile != "" {
+			serveErr = srv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+		} else {
+			serveErr = srv.ListenAndServe()
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			logger.Error("server error", "err", serveErr)
 			os.Exit(1)
 		}
 	}()

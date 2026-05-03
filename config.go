@@ -12,6 +12,8 @@ import (
 
 type config struct {
 	Listen          string        `ff:"long: listen, default: :8080, usage: address to listen on"`
+	TLSCertFile     string        `ff:"long: tls-cert-file, usage: path to TLS certificate file; enables TLS when set together with tls-key-file"`
+	TLSKeyFile      string        `ff:"long: tls-key-file, usage: path to TLS private key file; enables TLS when set together with tls-cert-file"`
 	OIDCIssuer      string        `ff:"long: oidc-issuer, usage: OIDC issuer URL (required)"`
 	OIDCClientID    string        `ff:"long: oidc-client-id, usage: OIDC client ID (required)"`
 	OIDCInitTimeout time.Duration `ff:"long: oidc-init-timeout, default: 30s, usage: max time to fetch OIDC discovery and JWKS at startup"`
@@ -49,6 +51,10 @@ func loadConfig(args []string) (config, error) {
 		ff.WithConfigAllowMissingFile(),
 	); err != nil {
 		return config{}, fmt.Errorf("parsing config: %w", err)
+	}
+
+	if (cfg.TLSCertFile == "") != (cfg.TLSKeyFile == "") {
+		return config{}, errors.New("tls-cert-file and tls-key-file must both be set or both be unset")
 	}
 
 	if cfg.OIDCIssuer == "" {
