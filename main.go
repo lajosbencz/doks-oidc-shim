@@ -39,7 +39,7 @@ func main() {
 		logger.Error("failed to create OIDC provider", "err", err)
 		os.Exit(1)
 	}
-	verify := newVerifyFunc(provider.Verifier(&gooidc.Config{ClientID: cfg.OIDCClientID}))
+	verify := newVerifyFunc(provider.Verifier(&gooidc.Config{ClientID: cfg.OIDCClientID, SkipClientIDCheck: cfg.OIDCSkipClientIDCheck}))
 
 	target, err := url.Parse(cfg.K8sAPI)
 	if err != nil {
