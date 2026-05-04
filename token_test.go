@@ -70,10 +70,10 @@ func TestValidRoleName_UnicodeLettersRejected(t *testing.T) {
 	// Homoglyph attacks via non-ASCII letters must be blocked — role names are
 	// ASCII-only to match Kubernetes resource naming conventions.
 	attacks := []string{
-		"аdmin",    // Cyrillic 'а' instead of ASCII 'a'
-		"admïn",    // Latin with diacritic
-		"管理者",      // CJK
-		"admin١",   // Arabic-Indic digit
+		"аdmin",  // Cyrillic 'а' instead of ASCII 'a'
+		"admïn",  // Latin with diacritic
+		"管理者",    // CJK
+		"admin١", // Arabic-Indic digit
 	}
 	for _, role := range attacks {
 		if err := validRoleName(role); err == nil {

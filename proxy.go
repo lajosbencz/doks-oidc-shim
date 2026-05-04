@@ -5,7 +5,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-"net"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -34,10 +35,10 @@ func newVerifyFunc(v *gooidc.IDTokenVerifier) verifyFunc {
 	return func(ctx context.Context, rawToken string) (map[string]any, error) {
 		idToken, err := v.Verify(ctx, rawToken)
 		if err != nil {
-			return nil, err
+			return nil, err //nolint:wrapcheck // raw error needed by caller for issuer-match check
 		}
 		var claims map[string]any
-		return claims, idToken.Claims(&claims)
+		return claims, idToken.Claims(&claims) //nolint:wrapcheck
 	}
 }
 
@@ -62,12 +63,12 @@ type redirectFollowingTransport struct {
 
 func (t *redirectFollowingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodGet && req.Method != http.MethodHead {
-		return t.base.RoundTrip(req)
+		return t.base.RoundTrip(req) //nolint:wrapcheck // pass-through of interface method
 	}
 	for range maxRedirects {
 		resp, err := t.base.RoundTrip(req)
 		if err != nil {
-			return nil, err
+			return nil, err //nolint:wrapcheck // pass-through of interface method
 		}
 		if resp.StatusCode < 300 || resp.StatusCode >= 400 {
 			return resp, nil
@@ -84,6 +85,7 @@ func (t *redirectFollowingTransport) RoundTrip(req *http.Request) (*http.Respons
 		if next.Host != t.target.Host {
 			return resp, nil
 		}
+		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 		clone := req.Clone(req.Context())
 		clone.URL = next
@@ -109,6 +111,7 @@ func buildProxy(cfg config, target *url.URL, caCert []byte) (http.Handler, error
 		TLSHandshakeTimeout:   cfg.TLSHandshakeTimeout,
 		ResponseHeaderTimeout: cfg.ResponseHeaderTimeout,
 		MaxIdleConns:          cfg.MaxIdleConns,
+		MaxIdleConnsPerHost:   cfg.MaxIdleConns,
 		IdleConnTimeout:       cfg.IdleConnTimeout,
 	}
 
@@ -151,6 +154,7 @@ func stripImpersonationHeaders(r *http.Request) {
 	for _, h := range impersonationHeaders {
 		r.Header.Del(h)
 	}
+	// Deleting during range is safe per Go spec — the removed key won't appear again.
 	for key := range r.Header {
 		if hasPrefixFold(key, "x-remote-extra-") || hasPrefixFold(key, "impersonate-extra-") {
 			r.Header.Del(key)
@@ -202,12 +206,8 @@ func handler(cfg config, verify verifyFunc, proxy http.Handler) http.HandlerFunc
 				return
 			}
 
-			logger.Info("proxying authenticated request",
-				"sub", claims["sub"],
-				"username", claims["preferred_username"],
-				"role", role,
-				"path", r.URL.Path,
-			)
+			logger.Info("proxying authenticated request", "role", role, "path", r.URL.Path)
+			logger.Debug("authenticated user", "sub", claims["sub"], "username", claims["preferred_username"])
 
 			r.Header.Set("Authorization", "Bearer "+saToken)
 		}

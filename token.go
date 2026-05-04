@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -28,7 +29,7 @@ func readSAToken(tokenDir, role string) (string, error) {
 	if err := validRoleName(role); err != nil {
 		return "", fmt.Errorf("invalid role: %w", err)
 	}
-	path := fmt.Sprintf("%s/%s/token", tokenDir, role)
+	path := filepath.Join(tokenDir, role, "token")
 	b, err := os.ReadFile(path) //nolint:gosec // path component validated by validRoleName above
 	if err != nil {
 		return "", fmt.Errorf("reading SA token for role %q: %w", role, err)

@@ -13,11 +13,25 @@ linters:
     - misspell       # spelling
     - prealloc       # slice preallocation
     - unparam        # unused function parameters
+    - gocritic       # style and correctness
+    - noctx          # http requests without context
+    - wrapcheck      # errors from external packages must be wrapped
+    - exhaustive     # switch exhaustiveness on typed constants
 
   settings:
     gosec:
       excludes:
         - G115  # integer overflow on conversion — not applicable here
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - noctx
+
+formatters:
+  enable:
+    - gofmt
 
 issues:
   max-issues-per-linter: 0

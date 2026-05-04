@@ -23,6 +23,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	warnZeroTimeouts(cfg)
+
 	logger.Info("starting doks-oidc-shim",
 		"listen", cfg.Listen,
 		"oidc_issuer", cfg.OIDCIssuer,
@@ -31,8 +33,8 @@ func main() {
 	)
 
 	initCtx, initCancel := context.WithTimeout(context.Background(), cfg.OIDCInitTimeout)
-	defer initCancel()
 	provider, err := gooidc.NewProvider(initCtx, cfg.OIDCIssuer)
+	initCancel()
 	if err != nil {
 		logger.Error("failed to create OIDC provider", "err", err)
 		os.Exit(1)
@@ -75,7 +77,6 @@ func main() {
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -93,14 +94,17 @@ func main() {
 
 	select {
 	case <-ctx.Done():
+		stop()
 		logger.Info("shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
+		err := srv.Shutdown(shutdownCtx)
+		cancel()
+		if err != nil {
 			logger.Error("shutdown error", "err", err)
 			os.Exit(1)
 		}
 	case err := <-serveErr:
+		stop()
 		logger.Error("server error", "err", err)
 		os.Exit(1)
 	}
