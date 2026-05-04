@@ -51,7 +51,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	proxy := buildProxy(cfg, target, caCert)
+	proxy, err := buildProxy(cfg, target, caCert)
+	if err != nil {
+		logger.Error("building proxy", "err", err)
+		os.Exit(1)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

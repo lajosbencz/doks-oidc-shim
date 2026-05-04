@@ -93,8 +93,11 @@ func (t *redirectFollowingTransport) RoundTrip(req *http.Request) (*http.Respons
 	return nil, fmt.Errorf("redirect loop: exceeded %d hops", maxRedirects)
 }
 
-func buildProxy(cfg config, target *url.URL, caCert []byte) http.Handler {
-	pool := x509.NewCertPool()
+func buildProxy(cfg config, target *url.URL, caCert []byte) (http.Handler, error) {
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("loading system cert pool: %w", err)
+	}
 	pool.AppendCertsFromPEM(caCert)
 
 	transport := &http.Transport{
@@ -123,7 +126,7 @@ func buildProxy(cfg config, target *url.URL, caCert []byte) http.Handler {
 	}
 	h := kubeproxy.NewUpgradeAwareHandler(&loc, rt, false, false, proxyErrorResponder{})
 	h.UseRequestLocation = true
-	return h
+	return h, nil
 }
 
 // hasPrefixFold reports whether s has the given lowercase prefix,
