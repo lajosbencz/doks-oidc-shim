@@ -1,0 +1,78 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doks-oidc-shim-operator
+  namespace: oidc-shim
+spec:
+  # 2 replicas with leader election — only one reconciles at a time, the other
+  # holds a lease and takes over instantly if the leader dies.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: doks-oidc-shim-operator
+  template:
+    metadata:
+      labels:
+        app: doks-oidc-shim-operator
+    spec:
+      serviceAccountName: doks-oidc-shim-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: operator
+          image: ghcr.io/lajosbencz/doks-oidc-shim:latest
+          args:
+            - operator
+            - --leader-elect
+            - --metrics-bind-address=:8383
+            - --health-probe-bind-address=:8081
+            # Omit --namespace to watch all namespaces (cluster-wide).
+            # Set --namespace=my-ns to restrict to a single namespace.
+          ports:
+            - name: metrics
+              containerPort: 8383
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 3
+            periodSeconds: 10
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: doks-oidc-shim-operator
+  namespace: oidc-shim
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: doks-oidc-shim-operator

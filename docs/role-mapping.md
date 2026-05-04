@@ -24,7 +24,7 @@ flowchart LR
     C --> R --> F --> SA --> CRB --> CR
 ```
 
-The shim uses the **first** value in the groups claim as the role name. The claim must exactly match a subdirectory name under `TOKEN_DIR`.
+The shim iterates the groups claim in order and uses the **first group that has a matching token file** under `TOKEN_DIR`. This means a user with multiple groups gets the highest-priority role whose token is mounted — priority is determined by claim order.
 
 ## Token directory layout
 

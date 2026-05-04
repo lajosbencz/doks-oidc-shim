@@ -1,0 +1,63 @@
+# Helm values for Headlamp (chart: headlamp/headlamp).
+#
+# The key integration point is overriding KUBERNETES_SERVICE_HOST and
+# KUBERNETES_SERVICE_PORT so that Headlamp's in-cluster client connects to the
+# shim instead of the real k8s API. The shim then handles OIDC token swapping
+# transparently — Headlamp never speaks directly to the k8s API server.
+#
+# Apply after the shim is running:
+#   helm upgrade --install headlamp headlamp/headlamp \
+#     --namespace headlamp --create-namespace \
+#     -f headlamp-values.yaml
+
+config:
+  # Run in-cluster mode: reads the service-account token from the projected
+  # volume and uses KUBERNETES_SERVICE_HOST/PORT to locate the API server.
+  inCluster: true
+  inClusterContextName: main
+  oidc:
+    clientID: ""       # set via secret (see existingOIDCSecret below)
+    clientSecret: ""   # set via secret
+    issuerURL: ""      # set via secret
+    scopes: ""         # set via secret — e.g. "openid,email,groups"
+    useCookie: true    # store the OIDC token in a browser cookie (required for token forwarding)
+  sessionTTL: 86400    # 1 day
+
+# Reference an existing secret that holds OIDC credentials.
+# Expected keys: clientID, clientSecret, issuerURL, scopes.
+existingOIDCSecret: oidc
+
+extraEnv:
+  # Re-point in-cluster discovery to the shim instead of the real API server.
+  - name: KUBERNETES_SERVICE_HOST
+    value: doks-oidc-shim.headlamp.svc.cluster.local
+  - name: KUBERNETES_SERVICE_PORT
+    value: "443"
+
+# Mount the namespace-local CA so Headlamp trusts the shim's TLS certificate.
+# The CA cert is produced by cert-manager (see cert-manager.yaml).
+volumes:
+  - name: kube-api-access
+    projected:
+      sources:
+        - serviceAccountToken:
+            expirationSeconds: 86400
+            path: token
+        # Replace the default cluster CA with our namespace CA so the in-cluster
+        # client validates the shim's certificate correctly.
+        - secret:
+            name: headlamp-ca
+            items:
+              - key: tls.crt
+                path: ca.crt
+        - downwardAPI:
+            items:
+              - fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+                path: namespace
+
+volumeMounts:
+  - name: kube-api-access
+    mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+    readOnly: true

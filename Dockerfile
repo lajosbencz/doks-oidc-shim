@@ -23,11 +23,13 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download && go mod verify
-COPY --exclude=*_test.go *.go ./
+COPY cmd/ cmd/
+COPY api/ api/
+COPY internal/ internal/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags="-s -w" -o /doks-oidc-shim .
+    go build -trimpath -ldflags="-s -w" -o /doks-oidc-shim ./cmd
 
 
 FROM alpine:${ALPINE_VERSION} AS final-alpine

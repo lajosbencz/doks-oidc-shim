@@ -1,11 +1,21 @@
-package main
+package config
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
-// setBaseEnv configures the minimum valid environment for loadConfig tests.
+// newTestCmd builds a cobra command with all proxy flags registered, suitable
+// for passing to Load() in tests.
+func newTestCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "test"}
+	RegisterFlags(cmd)
+	return cmd
+}
+
+// setBaseEnv configures the minimum valid environment for Load tests.
 // Individual tests override specific fields to exercise their scenario.
 func setBaseEnv(t *testing.T) {
 	t.Helper()
@@ -16,45 +26,45 @@ func setBaseEnv(t *testing.T) {
 	t.Setenv("TLS_KEY_FILE", "")
 }
 
-func TestLoadConfig_RequiresOIDCIssuer(t *testing.T) {
+func TestLoad_RequiresOIDCIssuer(t *testing.T) {
 	setBaseEnv(t)
 	t.Setenv("OIDC_ISSUER", "")
 
-	_, err := loadConfig([]string{})
+	_, err := Load(newTestCmd())
 	if err == nil || !strings.Contains(err.Error(), "OIDC_ISSUER") {
 		t.Errorf("expected OIDC_ISSUER error, got: %v", err)
 	}
 }
 
-func TestLoadConfig_RequiresOIDCClientID(t *testing.T) {
+func TestLoad_RequiresOIDCClientID(t *testing.T) {
 	setBaseEnv(t)
 	t.Setenv("OIDC_CLIENT_ID", "")
 
-	_, err := loadConfig([]string{})
+	_, err := Load(newTestCmd())
 	if err == nil || !strings.Contains(err.Error(), "OIDC_CLIENT_ID") {
 		t.Errorf("expected OIDC_CLIENT_ID error, got: %v", err)
 	}
 }
 
-func TestLoadConfig_RequiresK8sAPI(t *testing.T) {
+func TestLoad_RequiresK8sAPI(t *testing.T) {
 	setBaseEnv(t)
 	t.Setenv("K8S_API", "")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "")
 
-	_, err := loadConfig([]string{})
+	_, err := Load(newTestCmd())
 	if err == nil {
 		t.Error("expected error when no K8s API address available")
 	}
 }
 
-func TestLoadConfig_K8sAPIDerivedFromServiceEnv(t *testing.T) {
+func TestLoad_K8sAPIDerivedFromServiceEnv(t *testing.T) {
 	setBaseEnv(t)
 	t.Setenv("K8S_API", "")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "443")
 
-	cfg, err := loadConfig([]string{})
+	cfg, err := Load(newTestCmd())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,13 +73,13 @@ func TestLoadConfig_K8sAPIDerivedFromServiceEnv(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_K8sAPIDerivedFromIPv6ServiceEnv(t *testing.T) {
+func TestLoad_K8sAPIDerivedFromIPv6ServiceEnv(t *testing.T) {
 	setBaseEnv(t)
 	t.Setenv("K8S_API", "")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "::1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "443")
 
-	cfg, err := loadConfig([]string{})
+	cfg, err := Load(newTestCmd())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,13 +88,13 @@ func TestLoadConfig_K8sAPIDerivedFromIPv6ServiceEnv(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_K8sAPIDerivedFromIPv6FullAddr(t *testing.T) {
+func TestLoad_K8sAPIDerivedFromIPv6FullAddr(t *testing.T) {
 	setBaseEnv(t)
 	t.Setenv("K8S_API", "")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "fd00:dead:beef::1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "6443")
 
-	cfg, err := loadConfig([]string{})
+	cfg, err := Load(newTestCmd())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,44 +103,44 @@ func TestLoadConfig_K8sAPIDerivedFromIPv6FullAddr(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_TLSCertWithoutKeyRejected(t *testing.T) {
+func TestLoad_TLSCertWithoutKeyRejected(t *testing.T) {
 	setBaseEnv(t)
 	t.Setenv("TLS_CERT_FILE", "/path/to/cert.pem")
 	t.Setenv("TLS_KEY_FILE", "")
 
-	_, err := loadConfig([]string{})
+	_, err := Load(newTestCmd())
 	if err == nil {
 		t.Error("expected error when tls-cert-file is set but tls-key-file is not")
 	}
 }
 
-func TestLoadConfig_TLSKeyWithoutCertRejected(t *testing.T) {
+func TestLoad_TLSKeyWithoutCertRejected(t *testing.T) {
 	setBaseEnv(t)
 	t.Setenv("TLS_CERT_FILE", "")
 	t.Setenv("TLS_KEY_FILE", "/path/to/key.pem")
 
-	_, err := loadConfig([]string{})
+	_, err := Load(newTestCmd())
 	if err == nil {
 		t.Error("expected error when tls-key-file is set but tls-cert-file is not")
 	}
 }
 
-func TestLoadConfig_K8sAPIServiceHostWithoutPort(t *testing.T) {
+func TestLoad_K8sAPIServiceHostWithoutPort(t *testing.T) {
 	setBaseEnv(t)
 	t.Setenv("K8S_API", "")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "")
 
-	_, err := loadConfig([]string{})
+	_, err := Load(newTestCmd())
 	if err == nil {
 		t.Error("expected error when KUBERNETES_SERVICE_HOST is set but KUBERNETES_SERVICE_PORT is missing")
 	}
 }
 
-func TestLoadConfig_AllowPassthroughDefaultsFalse(t *testing.T) {
+func TestLoad_AllowPassthroughDefaultsFalse(t *testing.T) {
 	setBaseEnv(t)
 
-	cfg, err := loadConfig([]string{})
+	cfg, err := Load(newTestCmd())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,13 +149,13 @@ func TestLoadConfig_AllowPassthroughDefaultsFalse(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_ExplicitK8sAPITakesPrecedence(t *testing.T) {
+func TestLoad_ExplicitK8sAPITakesPrecedence(t *testing.T) {
 	setBaseEnv(t)
 	t.Setenv("K8S_API", "https://explicit.example.com:6443")
 	t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "443")
 
-	cfg, err := loadConfig([]string{})
+	cfg, err := Load(newTestCmd())
 	if err != nil {
 		t.Fatal(err)
 	}

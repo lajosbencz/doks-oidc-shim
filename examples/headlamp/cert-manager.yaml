@@ -1,0 +1,62 @@
+# A self-signed CA local to this namespace — no ClusterIssuer needed.
+# The CA cert (headlamp-ca secret) is mounted into the Headlamp pod so it
+# trusts the shim's TLS certificate without touching the cluster's global trust store.
+
+---
+# Step 1: bootstrap a self-signed issuer to mint the CA itself.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned
+  namespace: headlamp
+spec:
+  selfSigned: {}
+
+---
+# Step 2: the namespace-scoped CA certificate.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: headlamp-ca
+  namespace: headlamp
+spec:
+  isCA: true
+  commonName: headlamp-ca
+  secretName: headlamp-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned
+    kind: Issuer
+
+---
+# Step 3: an issuer backed by the CA above.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: headlamp-ca
+  namespace: headlamp
+spec:
+  ca:
+    secretName: headlamp-ca
+
+---
+# Step 4: the shim's TLS certificate, signed by the namespace CA.
+# All in-cluster DNS names for the shim service are listed so that Headlamp
+# can reach it under any of them and still get a valid certificate.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: doks-oidc-shim-tls
+  namespace: headlamp
+spec:
+  secretName: doks-oidc-shim-tls
+  issuerRef:
+    name: headlamp-ca
+    kind: Issuer
+  dnsNames:
+    - doks-oidc-shim
+    - doks-oidc-shim.headlamp
+    - doks-oidc-shim.headlamp.svc
+    - doks-oidc-shim.headlamp.svc.cluster.local

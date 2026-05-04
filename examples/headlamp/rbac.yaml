@@ -1,0 +1,251 @@
+---
+# ServiceAccount for the shim process itself — no k8s API permissions needed.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: doks-oidc-shim
+  namespace: headlamp
+automountServiceAccountToken: false
+
+---
+# One ServiceAccount per role. Role names must match the values your OIDC
+# provider puts in the groups claim (GROUPS_CLAIM). The shim reads each SA's
+# token from TOKEN_DIR/<role>/token and swaps it for the client's OIDC bearer.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shim-k8s-view
+  namespace: headlamp
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shim-k8s-edit
+  namespace: headlamp
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shim-k8s-admin
+  namespace: headlamp
+automountServiceAccountToken: false
+
+---
+# Long-lived tokens. k8s populates the `token` key automatically.
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/service-account-token
+metadata:
+  name: shim-k8s-view-token
+  namespace: headlamp
+  annotations:
+    kubernetes.io/service-account.name: shim-k8s-view
+
+---
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/service-account-token
+metadata:
+  name: shim-k8s-edit-token
+  namespace: headlamp
+  annotations:
+    kubernetes.io/service-account.name: shim-k8s-edit
+
+---
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/service-account-token
+metadata:
+  name: shim-k8s-admin-token
+  namespace: headlamp
+  annotations:
+    kubernetes.io/service-account.name: shim-k8s-admin
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: doks-oidc-shim:k8s-view
+rules:
+  - apiGroups: [""]
+    resources:
+      - configmaps
+      - endpoints
+      - events
+      - namespaces
+      - nodes
+      - persistentvolumeclaims
+      - persistentvolumes
+      - pods
+      - pods/log
+      - replicationcontrollers
+      - resourcequotas
+      - serviceaccounts
+      - services
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - daemonsets
+      - deployments
+      - replicasets
+      - statefulsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - cronjobs
+      - jobs
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources:
+      - poddisruptionbudgets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - clusterrolebindings
+      - clusterroles
+      - rolebindings
+      - roles
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources:
+      - storageclasses
+      - volumeattachments
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - nodes
+      - pods
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: doks-oidc-shim:k8s-edit
+rules:
+  - apiGroups: [""]
+    resources:
+      - configmaps
+      - persistentvolumeclaims
+      - pods
+      - pods/exec
+      - pods/portforward
+      - replicationcontrollers
+      - secrets
+      - serviceaccounts
+      - services
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources:
+      - daemonsets
+      - deployments
+      - deployments/scale
+      - replicasets
+      - statefulsets
+      - statefulsets/scale
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources:
+      - cronjobs
+      - jobs
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - nodes
+      - persistentvolumes
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - clusterrolebindings
+      - clusterroles
+      - rolebindings
+      - roles
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources:
+      - storageclasses
+      - volumeattachments
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - nodes
+      - pods
+    verbs: ["get", "list"]
+
+---
+# full cluster access — assign sparingly.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: doks-oidc-shim:k8s-admin
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+  - nonResourceURLs: ["*"]
+    verbs: ["*"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: doks-oidc-shim-k8s-view
+subjects:
+  - kind: ServiceAccount
+    name: shim-k8s-view
+    namespace: headlamp
+roleRef:
+  kind: ClusterRole
+  name: doks-oidc-shim:k8s-view
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: doks-oidc-shim-k8s-edit
+subjects:
+  - kind: ServiceAccount
+    name: shim-k8s-edit
+    namespace: headlamp
+roleRef:
+  kind: ClusterRole
+  name: doks-oidc-shim:k8s-edit
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: doks-oidc-shim-k8s-admin
+subjects:
+  - kind: ServiceAccount
+    name: shim-k8s-admin
+    namespace: headlamp
+roleRef:
+  kind: ClusterRole
+  name: doks-oidc-shim:k8s-admin
+  apiGroup: rbac.authorization.k8s.io

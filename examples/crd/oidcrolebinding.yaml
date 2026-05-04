@@ -1,0 +1,83 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: oidcrolebindings.oidcshim.io
+spec:
+  group: oidcshim.io
+  scope: Namespaced
+  names:
+    plural: oidcrolebindings
+    singular: oidcrolebinding
+    kind: OIDCRoleBinding
+    shortNames: [orb]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: ClaimValue
+          type: string
+          jsonPath: .spec.claimValue
+        - name: ServiceAccount
+          type: string
+          jsonPath: .status.serviceAccountName
+        - name: Ready
+          type: string
+          jsonPath: '.status.conditions[?(@.type=="Ready")].status'
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [claimValue]
+              x-kubernetes-validations:
+                - rule: "(has(self.clusterRoleRef) && !has(self.roleRef)) || (!has(self.clusterRoleRef) && has(self.roleRef))"
+                  message: "exactly one of clusterRoleRef or roleRef must be specified"
+              properties:
+                claimValue:
+                  type: string
+                  pattern: '^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$'
+                  description: Value matched against the groups JWT claim.
+                clusterRoleRef:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+                  description: ClusterRole to bind cluster-wide (mutually exclusive with roleRef).
+                roleRef:
+                  type: object
+                  required: [name, namespace]
+                  properties:
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                  description: Role to bind in a specific namespace (mutually exclusive with clusterRoleRef).
+            status:
+              type: object
+              properties:
+                serviceAccountName:
+                  type: string
+                conditions:
+                  type: array
+                  x-kubernetes-list-map-keys: [type]
+                  x-kubernetes-list-type: map
+                  items:
+                    type: object
+                    required: [type, status, lastTransitionTime, reason, message]
+                    properties:
+                      type:                 {type: string}
+                      status:               {type: string, enum: ["True", "False", "Unknown"]}
+                      lastTransitionTime:   {type: string, format: date-time}
+                      reason:               {type: string}
+                      message:              {type: string}
+                      observedGeneration:   {type: integer}

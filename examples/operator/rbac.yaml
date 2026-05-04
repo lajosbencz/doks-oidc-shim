@@ -1,0 +1,51 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: doks-oidc-shim-operator
+  namespace: oidc-shim
+
+---
+# The operator needs broad RBAC to provision ServiceAccounts and bindings on behalf
+# of OIDCRoleBinding resources. This is intentional and auditable via fieldManager.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: doks-oidc-shim-operator
+rules:
+  - apiGroups: [oidcshim.io]
+    resources: [oidcrolebindings]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [oidcshim.io]
+    resources: [oidcrolebindings/status, oidcrolebindings/finalizers]
+    verbs: [get, update, patch]
+  - apiGroups: [""]
+    resources: [serviceaccounts]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterrolebindings, rolebindings]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Required for leader election.
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: doks-oidc-shim-operator
+subjects:
+  - kind: ServiceAccount
+    name: doks-oidc-shim-operator
+    namespace: oidc-shim
+roleRef:
+  kind: ClusterRole
+  name: doks-oidc-shim-operator
+  apiGroup: rbac.authorization.k8s.io

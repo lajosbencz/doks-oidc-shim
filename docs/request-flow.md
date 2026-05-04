@@ -28,7 +28,7 @@ sequenceDiagram
 
 ## In-cluster / pass-through request
 
-Non-OIDC tokens (operators, health checks, the k8s client inside Headlamp's own pod) are forwarded unchanged. The shim cannot verify them — they are authorized entirely by the k8s API server.
+Requires `ALLOW_PASSTHROUGH=true`. Non-OIDC tokens (operators, health checks, the k8s client inside Headlamp's own pod) are forwarded unchanged. The shim cannot verify them — they are authorized entirely by the k8s API server.
 
 ```mermaid
 sequenceDiagram
@@ -38,7 +38,7 @@ sequenceDiagram
 
     Op->>Shim: GET /healthz<br/>Authorization: Bearer <SA token>
 
-    note over Shim: token fails OIDC verification → pass through
+    note over Shim: token fails OIDC verification<br/>issuer mismatch + ALLOW_PASSTHROUGH=true → pass through
 
     Shim->>K8s: GET /healthz<br/>Authorization: Bearer <SA token>
     K8s-->>Shim: 200 OK

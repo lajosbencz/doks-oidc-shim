@@ -4,18 +4,26 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: doks-oidc-shim
-  namespace: oidc-shim
+  namespace: headlamp
 data:
   OIDC_ISSUER: "https://your-oidc-issuer.example.com"
-  OIDC_CLIENT_ID: "your-client-id"
-  # GROUPS_CLAIM: "groups"   # default; set if your provider uses a different claim name
+  OIDC_CLIENT_ID: "headlamp"
+  GROUPS_CLAIM: "groups"
+  LISTEN: ":4443"
+  TLS_CERT_FILE: "/tls/tls.crt"
+  TLS_KEY_FILE: "/tls/tls.key"
+  # ALLOW_PASSTHROUGH is required when Headlamp runs in-cluster (-in-cluster flag).
+  # Headlamp uses its own projected SA token for some internal API calls; those tokens
+  # are not OIDC tokens and would otherwise be rejected. With passthrough enabled they
+  # are forwarded unchanged to the real k8s API and authorized there as usual.
+  ALLOW_PASSTHROUGH: "true"
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: doks-oidc-shim
-  namespace: oidc-shim
+  namespace: headlamp
 spec:
   replicas: 2
   selector:
@@ -39,15 +47,13 @@ spec:
           image: ghcr.io/lajosbencz/doks-oidc-shim:latest
           imagePullPolicy: Always
           ports:
-            - name: http
-              containerPort: 8080
+            - name: https
+              containerPort: 4443
               protocol: TCP
           envFrom:
             - configMapRef:
                 name: doks-oidc-shim
           env:
-            # K8S_API is auto-detected from KUBERNETES_SERVICE_HOST/PORT injected by k8s.
-            # K8S_CA_FILE is auto-detected from the kube-root-ca.crt volume below.
             - name: K8S_CA_FILE
               value: /var/run/secrets/kubernetes.io/ca.crt
           resources:
@@ -65,68 +71,77 @@ spec:
           livenessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: https
+              scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 15
           readinessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: https
+              scheme: HTTPS
             initialDelaySeconds: 3
             periodSeconds: 10
           volumeMounts:
             - name: kube-ca
               mountPath: /var/run/secrets/kubernetes.io
               readOnly: true
-            - name: token-view
-              mountPath: /var/run/secrets/tokens/view
+            - name: tls
+              mountPath: /tls
               readOnly: true
-            - name: token-edit
-              mountPath: /var/run/secrets/tokens/edit
+            - name: token-k8s-view
+              mountPath: /var/run/secrets/tokens/k8s-view
               readOnly: true
-            - name: token-admin
-              mountPath: /var/run/secrets/tokens/admin
+            - name: token-k8s-edit
+              mountPath: /var/run/secrets/tokens/k8s-edit
+              readOnly: true
+            - name: token-k8s-admin
+              mountPath: /var/run/secrets/tokens/k8s-admin
               readOnly: true
       volumes:
-        # Cluster CA cert — populated automatically by k8s in every namespace.
         - name: kube-ca
           configMap:
             name: kube-root-ca.crt
             items:
               - key: ca.crt
                 path: ca.crt
-        - name: token-view
+        - name: tls
           secret:
-            secretName: shim-view-token
+            secretName: doks-oidc-shim-tls
+        - name: token-k8s-view
+          secret:
+            secretName: shim-k8s-view-token
             items:
               - key: token
                 path: token
-        - name: token-edit
+        - name: token-k8s-edit
           secret:
-            secretName: shim-edit-token
+            secretName: shim-k8s-edit-token
             items:
               - key: token
                 path: token
-        - name: token-admin
+        - name: token-k8s-admin
           secret:
-            secretName: shim-admin-token
+            secretName: shim-k8s-admin-token
             items:
               - key: token
                 path: token
 
 ---
+# The service exposes port 443 externally. Headlamp is configured to use this
+# service as its Kubernetes API endpoint (see headlamp-values.yaml).
 apiVersion: v1
 kind: Service
 metadata:
   name: doks-oidc-shim
-  namespace: oidc-shim
+  namespace: headlamp
 spec:
   selector:
     app: doks-oidc-shim
   ports:
-    - name: http
+    - name: https
       port: 443
-      targetPort: http
+      targetPort: https
       protocol: TCP
 
 ---
@@ -134,7 +149,7 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: doks-oidc-shim
-  namespace: oidc-shim
+  namespace: headlamp
 spec:
   minAvailable: 1
   selector:

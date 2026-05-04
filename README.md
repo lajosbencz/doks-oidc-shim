@@ -19,14 +19,27 @@ Browser / Headlamp  ->  doks-oidc-shim  ->  Kubernetes API
 
 ## Quick start
 
-```sh
-# 1. edit examples/deploy/deployment.yaml — set OIDC_ISSUER and OIDC_CLIENT_ID
-# 2. apply
-kubectl apply -k examples/deploy/
+### Minimal (no TLS, no dashboard)
 
-# 3. point your dashboard at the shim
-#    https://doks-oidc-shim.oidc-shim.svc.cluster.local
+```sh
+# edit examples/deploy/deployment.yaml — set OIDC_ISSUER and OIDC_CLIENT_ID
+kubectl apply -k examples/deploy/
+kubectl -n oidc-shim rollout status deployment/doks-oidc-shim
 ```
+
+### Headlamp
+
+[`examples/headlamp/`](examples/headlamp/) — shim with TLS via cert-manager, co-located with Headlamp.
+
+```sh
+kubectl apply -k examples/headlamp/
+kubectl -n headlamp wait certificate/doks-oidc-shim-tls --for=condition=Ready --timeout=60s
+helm upgrade --install headlamp headlamp/headlamp \
+  --namespace headlamp \
+  -f examples/headlamp/headlamp-values.yaml
+```
+
+See [docs/SETUP.md](docs/SETUP.md) for the full guide.
 
 ## Images
 
